@@ -1,0 +1,100 @@
+name: publish
+
+# Builds Kestrel's own packages from their forks, signs them, assembles the
+# pacman repository database, and publishes the whole repository to GitHub Pages
+# (served at https://kestrel-distro.github.io/packages/).
+#
+# Required repository secrets:
+#   KESTREL_GPG_PRIVATE_KEY  armored export of the (passphrase-less) signing key
+#   KESTREL_GPG_KEY_ID       the signing key id/fingerprint
+#
+# The key must be a dedicated Kestrel packaging key, not a personal key.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 3 * * *'
+  repository_dispatch:
+    types: [upstream-release]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:latest
+      options: --privileged
+    env:
+      GPG_KEY: ${{ secrets.KESTREL_GPG_KEY_ID }}
+    steps:
+      - name: Prepare build environment
+        run: |
+          retry() { for i in 1 2 3 4 5; do "$@" && return 0; echo "retrying: $*"; sleep 15; done; return 1; }
+          retry pacman -Sy --noconfirm --needed archlinux-keyring
+          retry pacman -Su --noconfirm --needed base-devel git sudo gnupg
+          useradd -m builder
+          printf 'builder ALL=(ALL) NOPASSWD: ALL\n' > /etc/sudoers.d/builder
+          printf 'GPGKEY=%s\n' "$GPG_KEY" >> /home/builder/.makepkg.conf
+
+      - name: Import signing key
+        env:
+          KESTREL_GPG_PRIVATE_KEY: ${{ secrets.KESTREL_GPG_PRIVATE_KEY }}
+        run: |
+          if [[ -z "$KESTREL_GPG_PRIVATE_KEY" ]]; then
+            echo "KESTREL_GPG_PRIVATE_KEY secret is required" >&2
+            exit 1
+          fi
+          sudo -u builder bash -c 'gpg --batch --import' <<<"$KESTREL_GPG_PRIVATE_KEY"
+
+      - name: Build packages
+        run: |
+          mkdir -p /repo && chown builder /repo
+          build_pkg() {
+            local name="$1" url="$2" sub="$3"
+            echo "::group::build $name"
+            rm -rf /tmp/src
+            git clone --quiet "$url" /tmp/src
+            ( cd "/tmp/src/$sub" && \
+              sudo -u builder env -u CI -u GITHUB_RUN_ID -u GITHUB_ACTIONS \
+                PKGDEST=/repo makepkg -s -f --sign --noconfirm --nocheck )
+            rm -rf /tmp/src
+            echo "::endgroup::"
+          }
+          build_pkg hyprland   https://github.com/kestrel-distro/hyprland   packaging/local
+          build_pkg quickshell https://github.com/kestrel-distro/quickshell packaging/local
+          build_pkg kernel     https://github.com/kestrel-distro/kernel     packaging/local
+
+      - name: Assemble the repository
+        run: |
+          cd /repo
+          repo-add --sign --key "$GPG_KEY" kestrel.db.tar.gz ./*.pkg.tar.zst
+          pages="$GITHUB_WORKSPACE/pages"
+          rm -rf "$pages" && mkdir -p "$pages"
+          cp ./*.pkg.tar.zst ./*.pkg.tar.zst.sig "$pages/"
+          # pacman fetches <repo>.db and <repo>.db.sig; repo-add names them
+          # kestrel.db.tar.gz and kestrel.db.tar.gz.sig.
+          cp kestrel.db.tar.gz "$pages/kestrel.db"
+          cp kestrel.db.tar.gz.sig "$pages/kestrel.db.sig"
+          ls -la "$pages"
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: pages
+
+  deploy:
+    needs: publish
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
