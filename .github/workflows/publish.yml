@@ -62,6 +62,7 @@ jobs:
             echo "::group::build $name"
             rm -rf /tmp/src
             git clone --quiet "$url" /tmp/src
+            chown -R builder:builder /tmp/src
             ( cd "/tmp/src/$sub" && \
               sudo -u builder env -u CI -u GITHUB_RUN_ID -u GITHUB_ACTIONS \
                 PKGDEST=/repo makepkg -s -f --sign --noconfirm --nocheck )
