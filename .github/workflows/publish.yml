@@ -85,6 +85,21 @@ jobs:
           cp kestrel.db.tar.gz.sig "$pages/kestrel.db.sig"
           ls -la "$pages"
 
+      - name: Record tracked Arch dependency versions
+        run: |
+          pages="$GITHUB_WORKSPACE/pages"
+          pkgs=(aquamarine hyprutils hyprlang hyprcursor hyprgraphics hyprland-guiutils
+                qt6-base qt6-declarative qt6-wayland qt6-svg pipewire jemalloc cpptrace)
+          {
+            echo "# Arch package versions this build was compiled against."
+            echo "# Regenerated on every publish; a change here is a rebuild trigger."
+            for p in "${pkgs[@]}"; do
+              v="$(pacman -Si "$p" 2>/dev/null | awk -F': ' '/^Version/{print $2; exit}')"
+              printf '%s=%s\n' "$p" "${v:-unknown}"
+            done
+          } >"$pages/deps.txt"
+          cat "$pages/deps.txt"
+
       - uses: actions/upload-pages-artifact@v3
         with:
           path: pages
