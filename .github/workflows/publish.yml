@@ -52,7 +52,12 @@ jobs:
             echo "KESTREL_GPG_PRIVATE_KEY secret is required" >&2
             exit 1
           fi
-          sudo -u builder bash -c 'gpg --batch --import' <<<"$KESTREL_GPG_PRIVATE_KEY"
+          keyfile="$(mktemp)"
+          chmod 600 "$keyfile"
+          printf '%s\n' "$KESTREL_GPG_PRIVATE_KEY" >"$keyfile"
+          install -o builder -g builder -m600 "$keyfile" /home/builder/signing.asc
+          sudo -u builder gpg --batch --import /home/builder/signing.asc
+          shred -u "$keyfile" /home/builder/signing.asc
 
       - name: Build packages
         run: |
@@ -76,7 +81,9 @@ jobs:
       - name: Assemble the repository
         run: |
           cd /repo
-          repo-add --sign --key "$GPG_KEY" kestrel.db.tar.gz ./*.pkg.tar.zst
+          # Run as builder so repo-add signs the database with the key in the
+          # builder keyring (the key was imported there, not for root).
+          sudo -u builder repo-add --sign --key "$GPG_KEY" kestrel.db.tar.gz ./*.pkg.tar.zst
           pages="$GITHUB_WORKSPACE/pages"
           rm -rf "$pages" && mkdir -p "$pages"
           cp ./*.pkg.tar.zst ./*.pkg.tar.zst.sig "$pages/"
