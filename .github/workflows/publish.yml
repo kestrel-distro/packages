@@ -75,6 +75,13 @@ jobs:
           if curl -fsSL "$base/kestrel.db" -o "$db"; then
             mapfile -t files < <(tar -xOf "$db" --wildcards '*/desc' 2>/dev/null \
               | awk '/^%FILENAME%$/{getline; print}')
+            # A db that downloads but parses to zero packages means the repo
+            # would be rebuilt from only this run's output, silently dropping
+            # everything previously published. Fail loudly instead.
+            if (( ${#files[@]} == 0 )); then
+              echo "kestrel.db downloaded but contains no packages; refusing to continue" >&2
+              exit 1
+            fi
             echo "restoring ${#files[@]} existing package(s) from Pages"
             for f in "${files[@]}"; do
               curl -fsSL "$base/$f" -o "/repo/$f" || { echo "failed to fetch $f" >&2; exit 1; }
