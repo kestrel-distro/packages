@@ -121,9 +121,10 @@ jobs:
           # [kestrel] at install time, so skip the dependency check (no -s).
           build_pkg kestrel-desktop https://github.com/kestrel-distro/desktop packaging/kestrel-desktop --nodeps
 
-          # Qt wayland plugin (Quickshell presents through it); fork carries
-          # client-side explicit sync. Built from the fork branch.
-          build_pkg qt6-wayland-kestrel https://github.com/kestrel-distro/desktop packaging/qt6-wayland -s
+          # qtbase carries the Wayland client (Quickshell presents through
+          # it); the kestrel-distro/qtbase fork adds client-side explicit
+          # sync. Longest desktop build after the two main packages.
+          build_pkg qt6-base-kestrel https://github.com/kestrel-distro/desktop packaging/qt6-base -s
 
           # Kernel last: it is by far the longest build. Skipped for
           # desktop-release dispatches (a push to a desktop repo only changes
