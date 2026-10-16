@@ -12,6 +12,11 @@ name: publish
 
 on:
   workflow_dispatch:
+    inputs:
+      build_kernel:
+        description: Also rebuild kernel-kestrel (~4 h). Uncheck for a fast desktop-only publish.
+        type: boolean
+        default: true
   schedule:
     - cron: '17 3 * * *'
   repository_dispatch:
@@ -59,9 +64,31 @@ jobs:
           sudo -u builder gpg --batch --import /home/builder/signing.asc
           shred -u "$keyfile" /home/builder/signing.asc
 
-      - name: Build packages
+      - name: Restore existing repository
+        # Pages only ever holds the latest successful publish. Merge prior
+        # packages into /repo so a desktop-only run (build_kernel=false) does
+        # not drop kernel-kestrel from the served repository.
         run: |
           mkdir -p /repo && chown builder /repo
+          base="https://kestrel-distro.github.io/packages"
+          db="$(mktemp)"
+          if curl -fsSL "$base/kestrel.db" -o "$db"; then
+            mapfile -t files < <(tar -xOf "$db" --wildcards '*/desc' 2>/dev/null \
+              | awk '/^%FILENAME%$/{getline; print}')
+            echo "restoring ${#files[@]} existing package(s) from Pages"
+            for f in "${files[@]}"; do
+              curl -fsSL "$base/$f" -o "/repo/$f" || { echo "failed to fetch $f" >&2; exit 1; }
+              curl -fsSL "$base/$f.sig" -o "/repo/$f.sig" \
+                || { echo "failed to fetch $f.sig" >&2; exit 1; }
+            done
+          else
+            echo "no existing repository on Pages yet; starting fresh"
+          fi
+          rm -f "$db"
+          chown builder:builder /repo
+
+      - name: Build packages
+        run: |
           build_pkg() {
             local name="$1" url="$2" sub="$3"; shift 3
             echo "::group::build $name"
@@ -87,8 +114,14 @@ jobs:
           # [kestrel] at install time, so skip the dependency check (no -s).
           build_pkg kestrel-desktop https://github.com/kestrel-distro/desktop packaging/kestrel-desktop --nodeps
 
-          # Kernel last: it is by far the longest build.
-          build_pkg kernel     https://github.com/kestrel-distro/kernel     packaging/local -s
+          # Kernel last: it is by far the longest build. Skippable for fast
+          # desktop-only publishes; the restored packages above keep the
+          # served repo intact either way.
+          if [[ "${{ inputs.build_kernel }}" != "false" ]]; then
+            build_pkg kernel https://github.com/kestrel-distro/kernel packaging/local -s
+          else
+            echo "build_kernel=false; keeping existing kernel packages"
+          fi
 
       - name: Assemble the repository
         run: |
