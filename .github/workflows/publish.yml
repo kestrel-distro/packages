@@ -160,7 +160,9 @@ jobs:
                 qt6-base qt6-declarative qt6-wayland qt6-svg pipewire jemalloc cpptrace)
           {
             echo "# Arch package versions this build was compiled against."
-            echo "# Regenerated on every publish; a change here is a rebuild trigger."
+            echo "# Regenerated on every publish. This is a record for humans and"
+            echo "# drift forensics; automatic rebuilds trigger via the desktop"
+            echo "# repo's version-check and repository_dispatch, not by diffing this file."
             for p in "${pkgs[@]}"; do
               v="$(pacman -Si "$p" 2>/dev/null | awk -F': ' '/^Version/{print $2; exit}')"
               printf '%s=%s\n' "$p" "${v:-unknown}"
