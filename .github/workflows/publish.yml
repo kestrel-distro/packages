@@ -63,20 +63,30 @@ jobs:
         run: |
           mkdir -p /repo && chown builder /repo
           build_pkg() {
-            local name="$1" url="$2" sub="$3"
+            local name="$1" url="$2" sub="$3"; shift 3
             echo "::group::build $name"
             rm -rf /tmp/src
             git clone --quiet "$url" /tmp/src
             chown -R builder:builder /tmp/src
             ( cd "/tmp/src/$sub" && \
               sudo -u builder env -u CI -u GITHUB_RUN_ID -u GITHUB_ACTIONS \
-                PKGDEST=/repo makepkg -s -f --sign --noconfirm --nocheck )
+                PKGDEST=/repo makepkg -f --sign --noconfirm --nocheck "$@" )
             rm -rf /tmp/src
             echo "::endgroup::"
           }
-          build_pkg hyprland   https://github.com/kestrel-distro/hyprland   packaging/local
-          build_pkg quickshell https://github.com/kestrel-distro/quickshell packaging/local
-          build_pkg kernel     https://github.com/kestrel-distro/kernel     packaging/local
+          build_pkg hyprland   https://github.com/kestrel-distro/hyprland   packaging/local -s
+          build_pkg quickshell https://github.com/kestrel-distro/quickshell packaging/local -s
+          build_pkg kernel     https://github.com/kestrel-distro/kernel     packaging/local -s
+
+          # Desktop library closure, rebuilt from upstream at Arch's versions with
+          # clang -march=x86-64-v3 + ThinLTO (distinct -kestrel names).
+          for lib in hyprutils hyprlang hyprgraphics hyprcursor hyprwire aquamarine; do
+            build_pkg "$lib-kestrel" https://github.com/kestrel-distro/desktop "packaging/$lib" -s
+          done
+
+          # Metapackage: no build-time dependencies; its depends resolve from
+          # [kestrel] at install time, so skip the dependency check (no -s).
+          build_pkg kestrel-desktop https://github.com/kestrel-distro/desktop packaging/kestrel-desktop --nodeps
 
       - name: Assemble the repository
         run: |
