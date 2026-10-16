@@ -20,7 +20,7 @@ on:
   schedule:
     - cron: '17 3 * * *'
   repository_dispatch:
-    types: [upstream-release]
+    types: [upstream-release, desktop-release]
 
 permissions:
   contents: read
@@ -114,13 +114,17 @@ jobs:
           # [kestrel] at install time, so skip the dependency check (no -s).
           build_pkg kestrel-desktop https://github.com/kestrel-distro/desktop packaging/kestrel-desktop --nodeps
 
-          # Kernel last: it is by far the longest build. Skippable for fast
-          # desktop-only publishes; the restored packages above keep the
-          # served repo intact either way.
-          if [[ "${{ inputs.build_kernel }}" != "false" ]]; then
+          # Kernel last: it is by far the longest build. Skipped for
+          # desktop-release dispatches (a push to a desktop repo only changes
+          # the desktop set) and when build_kernel=false; the restored
+          # packages above keep the served repo intact either way.
+          skip_kernel=0
+          [[ "${{ github.event.action }}" == "desktop-release" ]] && skip_kernel=1
+          [[ "${{ inputs.build_kernel }}" == "false" ]] && skip_kernel=1
+          if (( ! skip_kernel )); then
             build_pkg kernel https://github.com/kestrel-distro/kernel packaging/local -s
           else
-            echo "build_kernel=false; keeping existing kernel packages"
+            echo "skipping kernel build; keeping existing kernel packages"
           fi
 
       - name: Assemble the repository
