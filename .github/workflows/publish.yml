@@ -126,6 +126,14 @@ jobs:
           # sync. Longest desktop build after the two main packages.
           build_pkg qt6-base-kestrel https://github.com/kestrel-distro/desktop packaging/qt6-base -s
 
+          # Kernel-bridge packages: the scheduling hint library, the broker
+          # that drives class placement, and the scx_kestrel scheduler. The
+          # broker and lib need no build deps (--nodeps); scx_kestrel is a
+          # cargo workspace crate.
+          build_pkg libkestrel-hint https://github.com/kestrel-distro/kestrel packaging/libkestrel-hint --nodeps
+          build_pkg kestrel-broker https://github.com/kestrel-distro/kestrel packaging/kestrel-broker --nodeps
+          build_pkg scx-kestrel https://github.com/kestrel-distro/scx packaging/arch -s
+
           # Kernel last: it is by far the longest build. Skipped for
           # desktop-release dispatches (a push to a desktop repo only changes
           # the desktop set) and when build_kernel=false; the restored
