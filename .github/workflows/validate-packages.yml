@@ -1,0 +1,84 @@
+name: validate-packages
+
+# Builds the kernel-bridge packages that do not need a kernel or an ISO, so a
+# recipe break is caught before publish. No signing and no repository update:
+# this only proves they build and contain the expected payload.
+
+on:
+  workflow_dispatch:
+  repository_dispatch:
+    types: [package-validate]
+  schedule:
+    - cron: '0 5 * * 1'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:latest
+      options: --privileged
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare build environment
+        run: |
+          retry() { for i in 1 2 3 4 5; do "$@" && return 0; echo "retrying: $*"; sleep 15; done; return 1; }
+          retry pacman -Sy --noconfirm --needed archlinux-keyring
+          retry pacman -Su --noconfirm --needed base-devel git sudo rust cargo clang llvm
+          useradd -m builder
+          printf 'builder ALL=(ALL) NOPASSWD: ALL\n' >/etc/sudoers.d/builder
+          mkdir -p /out /src /home/builder
+          chown builder:builder /out /src
+
+      - name: Check the recipes parse
+        run: |
+          set -euo pipefail
+          check() {
+            local url="$1" sub="$2" name="$3"
+            echo "::group::recipe $name"
+            rm -rf /src/src && git clone --quiet "$url" /src/src
+            chown -R builder:builder /src/src
+            ( cd "/src/src/$sub" && bash -n PKGBUILD && \
+              sudo -u builder makepkg --printsrcinfo >/dev/null )
+            echo "::endgroup::"
+          }
+          check https://github.com/kestrel-distro/kestrel packaging/libkestrel-hint libkestrel-hint
+          check https://github.com/kestrel-distro/kestrel packaging/kestrel-broker kestrel-broker
+          check https://github.com/kestrel-distro/scx packaging/arch scx-kestrel
+          check https://github.com/kestrel-distro/scx-loader packaging/arch scx-tools-kestrel
+
+      - name: Build the packages
+        run: |
+          set -euo pipefail
+          build() {
+            local url="$1" sub="$2" name="$3"; shift 3
+            echo "::group::build $name"
+            rm -rf /src/src && git clone --quiet "$url" /src/src
+            chown -R builder:builder /src/src
+            ( cd "/src/src/$sub" && \
+              sudo -u builder env PKGDEST=/out \
+                makepkg -f --noconfirm --nocheck "$@" )
+            echo "::endgroup::"
+          }
+          build https://github.com/kestrel-distro/kestrel packaging/libkestrel-hint libkestrel-hint --nodeps
+          build https://github.com/kestrel-distro/kestrel packaging/kestrel-broker kestrel-broker --nodeps
+          build https://github.com/kestrel-distro/scx packaging/arch scx-kestrel -s
+          build https://github.com/kestrel-distro/scx-loader packaging/arch scx-tools-kestrel -s
+          ls -l /out
+
+      - name: Check the payload
+        run: |
+          set -euo pipefail
+          list() { bsdtar -tf "/out/$1" | sort; }
+          list kestrel-broker-*.pkg.tar.zst | grep -qx 'usr/bin/kestrel-broker'
+          list libkestrel-hint-*.pkg.tar.zst | grep -qx 'usr/include/kestrel_hint.h'
+          list scx-kestrel-*.pkg.tar.zst | grep -qx 'usr/bin/scx_kestrel'
+          list scx-kestrel-*.pkg.tar.zst | grep -qx 'usr/share/scx_kestrel/kestrel-layers.json'
+          list scx-tools-kestrel-*.pkg.tar.zst | grep -qx 'usr/bin/scx_loader'
+          list scx-tools-kestrel-*.pkg.tar.zst | grep -qx 'usr/bin/scxctl'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kernel-bridge-packages
+          if-no-files-found: error
+          path: /out/*.pkg.tar.zst

@@ -133,6 +133,9 @@ jobs:
           build_pkg libkestrel-hint https://github.com/kestrel-distro/kestrel packaging/libkestrel-hint --nodeps
           build_pkg kestrel-broker https://github.com/kestrel-distro/kestrel packaging/kestrel-broker --nodeps
           build_pkg scx-kestrel https://github.com/kestrel-distro/scx packaging/arch -s
+          # scx_loader's SupportedSched is closed; this fork registers
+          # scx_kestrel and replaces the distro scx-tools package.
+          build_pkg scx-tools-kestrel https://github.com/kestrel-distro/scx-loader packaging/arch -s
 
           # Kernel last: it is by far the longest build. Skipped for
           # desktop-release dispatches (a push to a desktop repo only changes
