@@ -24,7 +24,7 @@ jobs:
         run: |
           retry() { for i in 1 2 3 4 5; do "$@" && return 0; echo "retrying: $*"; sleep 15; done; return 1; }
           retry pacman -Sy --noconfirm --needed archlinux-keyring
-          retry pacman -Su --noconfirm --needed base-devel git sudo rust cargo clang llvm
+          retry pacman -Su --noconfirm --needed base-devel git sudo rust cargo clang llvm libarchive
           useradd -m builder
           printf 'builder ALL=(ALL) NOPASSWD: ALL\n' >/etc/sudoers.d/builder
           mkdir -p /out /src /home/builder
